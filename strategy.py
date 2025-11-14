@@ -9,24 +9,23 @@ import cpz
 from cpz.execution.models import OrderSubmitRequest
 from cpz.execution.enums import OrderSide, OrderType, TimeInForce
 
-# --- Set CPZ AI credentials (REPLACE WITH YOUR ACTUAL CREDENTIALS) ---
-os.environ["CPZ_AI_API_KEY"] = "your_actual_cpz_api_key_here"  # ← REPLACE THIS
-os.environ["CPZ_AI_API_SECRET"] = "your_actual_cpz_secret_here"  # ← REPLACE THIS  
-os.environ["CPZ_STRATEGY_ID"] = "3080ca94-7598-46fc-9ea3-1159c46362e8"  # Your actual strategy ID
+#setting up teh credentials
+os.environ["CPZ_AI_API_KEY"] = "cpz_key_bb9411566c9144368e1552cd" 
+os.environ["CPZ_AI_API_SECRET"] = "cpz_secret_4es5p4n3a1vc3x5s6v2xl693d2p43ch3u5q6b18x434r1c2z"  
+os.environ["CPZ_STRATEGY_ID"] = "3080ca94-7598-46fc-9ea3-1159c46362e8"  
 
-# ==========================
-# Strategy Parameters
-# ==========================
+#strategy settings
+
 LOOKBACK_PERIOD = 20
-MOMENTUM_THRESHOLD = 0.10
+MOMENTUM_THRESHOLD = 0.10 # subject to modification
 TICKERS = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA']
 HISTORY_DAYS = 365
-PORTFOLIO_VALUE = 100000  # Assume $100,000 portfolio
+PORTFOLIO_VALUE = 100000  # currency $
 
 # ==========================
 # CPZ AI / Execution Config
 # ==========================
-PLACE_ORDERS = False  # <<< SET TO True TO SEND REAL ORDERS
+PLACE_ORDERS = True  # SET TO True TO SEND REAL ORDERS
 BROKER = "alpaca"
 BROKER_ENVIRONMENT = "paper"  # "paper" or "live"
 
@@ -35,7 +34,7 @@ STRATEGY_ID = os.environ.get("CPZ_STRATEGY_ID", "3080ca94-7598-46fc-9ea3-1159c46
 
 def calculate_momentum_score(prices: pd.Series, lookback: int = LOOKBACK_PERIOD) -> pd.Series:
     """Return a series of risk-adjusted momentum scores (rolling mean / rolling std)."""
-    returns = prices.pct_change()
+    returns = prices.pct_change()  # we use the return prices wich is P_t - P_t-1 / P_t-1
     rolling_mean = returns.rolling(window=lookback).mean()
     rolling_std = returns.rolling(window=lookback).std()
     score = rolling_mean / rolling_std.replace(0, np.nan)
@@ -57,6 +56,7 @@ def fetch_prices(tickers, period_days=HISTORY_DAYS):
     prices = {}
     current_prices = {}
 
+    # yahoo finnace don't have any consistance in the data it can have 1 or multiple name tickers
     if isinstance(tickers, str) or len(tickers) == 1:
         t = tickers if isinstance(tickers, str) else tickers[0]
         if 'Adj Close' in data.columns:
@@ -65,7 +65,7 @@ def fetch_prices(tickers, period_days=HISTORY_DAYS):
         elif 'Close' in data.columns:
             prices[t] = data['Close'].dropna()
             current_prices[t] = data['Close'].iloc[-1]
-    else:
+    else:  # for all the prices with multiples names of columns
         for t in tickers:
             try:
                 if hasattr(data.columns, "levels") and t in data.columns.levels[0]:
@@ -87,19 +87,16 @@ def momentum_strategy(
     place_orders: bool = PLACE_ORDERS,
     strategy_id: str = STRATEGY_ID,
 ):
-    print("=== Momentum Alpha Strategy with Short Selling ===")
+    print("Momentum Alpha Strategy with Short Selling")
     print(f"Portfolio Value: ${portfolio_value:,.2f}\n")
-    print(f"Strategy ID: {strategy_id}")
     print(f"Order Placement: {'ENABLED' if place_orders else 'DISABLED (Simulation Mode)'}")
-    print(f"Broker: {BROKER} ({BROKER_ENVIRONMENT})\n")
 
     prices_map, current_prices = fetch_prices(tickers, HISTORY_DAYS)
-
     signals = {}
 
-    # Calculate signals for all tickers
+    #calculate signals for all tickers
     for t in tickers:
-        if t not in prices_map or len(prices_map[t]) < lookback + 1:
+        if t not in prices_map or len(prices_map[t]) < lookback + 1:   # if empty or not enough data bc we need at least 20 days
             print(f"{t}: insufficient data. Skipping.")
             signals[t] = {"signal": 0, "momentum": np.nan}
             continue
@@ -108,7 +105,7 @@ def momentum_strategy(
         score_series = calculate_momentum_score(series, lookback=lookback)
         current_score = score_series.iloc[-1]
 
-        # Determine signal
+        #determine signal
         if pd.isna(current_score):
             signal = 0
         elif current_score > threshold:
@@ -123,14 +120,14 @@ def momentum_strategy(
             "momentum": float(current_score) if not pd.isna(current_score) else np.nan,
         }
 
-    # Portfolio allocation logic
+    #portfolio allocation logic
     long_positions = [t for t in tickers if signals[t]["signal"] == 1]
     short_positions = [t for t in tickers if signals[t]["signal"] == -1]
     active_positions = long_positions + short_positions
 
     n_active = len(active_positions)
 
-    # Equal allocation across active positions
+    # equal allocation across active positions
     portfolio_allocation = {}
 
     if n_active > 0:
@@ -282,7 +279,7 @@ def momentum_strategy(
                     strategy_id=strategy_id,
                 ))
 
-                print(f"✅ {side.name} {qty} {symbol} -> Order ID: {order.id}, Status: {order.status}")
+                print(f"{side.name} {qty} {symbol} -> Order ID: {order.id}, Status: {order.status}")
                 orders.append(order)
 
             if not orders:
@@ -310,4 +307,4 @@ if __name__ == "__main__":
     results = momentum_strategy(portfolio_value=100000)
     
     if not PLACE_ORDERS:
-        print(f"\n💡 To enable real trading, set PLACE_ORDERS = True at the top of the file")
+        print(f" To enable real trading, set PLACE_ORDERS = True at the top of the file")
